@@ -5,12 +5,16 @@ import "regenerator-runtime/runtime";
 import { css } from "emotion";
 import debounce from "lodash.debounce";
 import React from "react";
-import { prettySize } from "./Utils";
+import {
+  SandpackConsumer,
+  SandpackProvider,
+} from "react-smooshpack/es/components";
 import ErrorBoundary from "./ErrorBoundary";
 import CodeMirrorPanel from "./CodeMirrorPanel";
 import ReplOptions from "./ReplOptions";
 import StorageService from "./StorageService";
 import UriUtils from "./UriUtils";
+import { getCodeSize } from "./Utils";
 import loadBundle from "./loadBundle";
 import loadPlugin from "./loadPlugin";
 import PresetLoadingAnimation from "./PresetLoadingAnimation";
@@ -91,6 +95,21 @@ function toCamelCase(str) {
       return $1.toLowerCase();
     });
 }
+
+const replConfig = {
+  templateName: "babel-repl",
+  templateColor: "#F5DB5F",
+  sandpack: {
+    defaultExtensions: ["js", "jsx", "ts", "tsx", "json"],
+    aliases: {},
+    preInstalledDependencies: [],
+    transpilers: {
+      "\\.jsx?$": ["./transpilers/babel"],
+      "\\.json$": ["codesandbox:json"],
+      ".*": ["codesandbox:raw"],
+    },
+  },
+};
 
 class Repl extends React.Component {
   props: Props;
@@ -194,8 +213,58 @@ class Repl extends React.Component {
       lineWrapping: state.lineWrap,
     };
 
+    const { code, config, evalEnabled, fileSize, lineWrap } = this.state;
+
+    const files = {
+      "/.codesandbox/template.json": {
+        code: JSON.stringify(replConfig),
+      },
+      "/.codesandbox/transpilers/babel.js": {
+        code: `import { transform } from "@babel/core";
+
+    export async function transpile(code, loaderContext) {
+      const newCode = transform(code, {
+        filename: "/index.js",
+        babelrc: true
+      });
+
+      console.log(newCode);
+
+      return { transpiledCode: code };
+    }`,
+      },
+      "package.json": {
+        code: JSON.stringify({
+          main: "./index.js",
+        }),
+      },
+      "./index.js": { code },
+      "/.babelrc": {
+        code: JSON.stringify(
+          {
+            presets: ["es2015", "stage-2", "react"],
+          },
+          null,
+          2
+        ),
+      },
+    };
+
+    const dependencies = {
+      assert: "latest",
+      "@babel/cli": "7.0.0-beta.49",
+      "@babel/core": "7.0.0-beta.49",
+    };
+
     return (
-      <div className={styles.repl}>
+      <SandpackProvider
+        files={files}
+        dependencies={dependencies}
+        className={styles.repl}
+        entry="/index.js"
+        skipEval={!evalEnabled}
+        template="custom"
+      >
         <ReplOptions
           babelVersion={state.babel.version}
           className={styles.optionsColumn}
@@ -224,29 +293,104 @@ class Repl extends React.Component {
           showOfficialExternalPlugins={state.showOfficialExternalPlugins}
           loadingExternalPlugins={state.loadingExternalPlugins}
         />
-
         <div className={styles.panels}>
-          <CodeMirrorPanel
-            className={styles.codeMirrorPanel}
-            code={state.code}
-            errorMessage={state.compileErrorMessage}
-            fileSize={state.meta.rawSize}
-            onChange={this._updateCode}
-            options={options}
-            placeholder="Write code here"
-          />
-          <CodeMirrorPanel
-            className={styles.codeMirrorPanel}
-            code={state.compiled}
-            errorMessage={state.evalErrorMessage}
-            fileSize={state.meta.compiledSize}
-            info={state.debugEnvPreset ? state.envPresetDebugInfo : null}
-            options={options}
-            placeholder="Compiled output will be shown here"
-          />
+          <SandpackConsumer>
+            {({ errors, managerState }) => {
+              console.log(managerState);
+              let compiled;
+
+              if (
+                managerState &&
+                managerState.transpiledModules["/index.js:"] &&
+                managerState.transpiledModules["/index.js:"].source &&
+                managerState.transpiledModules["/index.js:"].source.compiledCode
+              ) {
+                compiled =
+                  managerState.transpiledModules["/index.js:"].source
+                    .compiledCode;
+              }
+
+              return [
+                <CodeMirrorPanel
+                  className={styles.codeMirrorPanel}
+                  code={this.state.code}
+                  errorMessage={errors.length ? errors[0].message : undefined}
+                  fileSize={getCodeSize(this.state.code)}
+                  key="input"
+                  onChange={this._updateCode}
+                  options={options}
+                  placeholder="Write code here"
+                />,
+                <CodeMirrorPanel
+                  className={styles.codeMirrorPanel}
+                  code={compiled}
+                  errorMessage={state.evalErrorMessage}
+                  fileSize={compiled ? getCodeSize(compiled) : null}
+                  info={state.debugEnvPreset ? state.envPresetDebugInfo : null}
+                  key="output"
+                  options={options}
+                  placeholder="Compiled output will be shown here"
+                />,
+              ];
+            }}
+          </SandpackConsumer>
         </div>
-      </div>
+      </SandpackProvider>
     );
+
+    // return (
+    //   <div className={styles.repl}>
+    //     <ReplOptions
+    //       babelVersion={state.babel.version}
+    //       className={styles.optionsColumn}
+    //       debugEnvPreset={state.debugEnvPreset}
+    //       envConfig={state.envConfig}
+    //       envPresetState={state.envPresetState}
+    //       shippedProposalsState={state.shippedProposalsState}
+    //       fileSize={state.fileSize}
+    //       isExpanded={state.isSidebarExpanded}
+    //       lineWrap={state.lineWrap}
+    //       onEnvPresetSettingChange={this._onEnvPresetSettingChange}
+    //       onExternalPluginRemove={this.handleRemoveExternalPlugin}
+    //       onIsExpandedChange={this._onIsSidebarExpandedChange}
+    //       onSettingChange={this._onSettingChange}
+    //       pluginState={state.plugins}
+    //       presetState={state.presets}
+    //       runtimePolyfillConfig={runtimePolyfillConfig}
+    //       runtimePolyfillState={state.runtimePolyfillState}
+    //       externalPlugins={state.externalPlugins}
+    //       pluginChange={this._pluginChange}
+    //       pluginSearch={this._pluginSearch}
+    //       pluginValue={state.pluginSearch}
+    //       showOfficialExternalPluginsChanged={
+    //         this._showOfficialExternalPluginsChanged
+    //       }
+    //       showOfficialExternalPlugins={state.showOfficialExternalPlugins}
+    //       loadingExternalPlugins={state.loadingExternalPlugins}
+    //     />
+
+    //     <div className={styles.panels}>
+    //       <CodeMirrorPanel
+    //         className={styles.codeMirrorPanel}
+    //         code={state.code}
+    //         errorMessage={state.compileErrorMessage}
+    //         fileSize={state.meta.rawSize}
+    //         onChange={this._updateCode}
+    //         options={options}
+    //         placeholder="Write code here"
+    //       />
+    //       <CodeMirrorPanel
+    //         className={styles.codeMirrorPanel}
+    //         code={state.compiled}
+    //         errorMessage={state.evalErrorMessage}
+    //         fileSize={state.meta.compiledSize}
+    //         info={state.debugEnvPreset ? state.envPresetDebugInfo : null}
+    //         options={options}
+    //         placeholder="Compiled output will be shown here"
+    //       />
+    //     </div>
+    //   </div>
+    // );
   }
 
   async _setupBabel(defaultPresets) {
@@ -457,8 +601,6 @@ class Repl extends React.Component {
         sourceMap: runtimePolyfillState.isEnabled,
       })
       .then(result => {
-        result.meta.compiledSize = prettySize(result.meta.compiledSize);
-        result.meta.rawSize = prettySize(result.meta.rawSize);
         this.setState(result, setStateCallback);
       });
   };

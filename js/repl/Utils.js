@@ -1,5 +1,6 @@
 const sizes = ["Bytes", "kB", "MB", "GB", "TB", "PB", "EB"];
-export function prettySize(size: number) {
+
+const prettySize = (size: number) => {
   const places = 1;
   let mysize;
 
@@ -22,4 +23,8 @@ export function prettySize(size: number) {
     mysize = `0 ${unit}`;
   }
   return mysize;
-}
+};
+
+export const getCodeSize = (code: string) => {
+  return prettySize(new Blob([code], { type: "text/plain" }).size);
+};
