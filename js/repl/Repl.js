@@ -111,10 +111,7 @@ const replConfig = {
   },
 };
 
-class Repl extends React.Component {
-  props: Props;
-  state: State;
-
+class Repl extends React.Component<Props, State> {
   _numLoadingPlugins = 0;
   _workerApi = new WorkerApi();
 
@@ -233,16 +230,11 @@ class Repl extends React.Component {
       return { transpiledCode: code };
     }`,
       },
-      "package.json": {
-        code: JSON.stringify({
-          main: "./index.js",
-        }),
-      },
-      "./index.js": { code },
+      "/index.js": { code },
       "/.babelrc": {
         code: JSON.stringify(
           {
-            presets: ["es2015", "stage-2", "react"],
+            presets: ["@babel/es2015"],
           },
           null,
           2
@@ -252,8 +244,8 @@ class Repl extends React.Component {
 
     const dependencies = {
       assert: "latest",
-      "@babel/cli": "7.0.0-beta.49",
       "@babel/core": "7.0.0-beta.49",
+      "@babel/preset-es2015": "7.0.0-beta.49",
     };
 
     return (
